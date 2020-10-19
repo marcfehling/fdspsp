@@ -8,3 +8,10 @@
 # license can be found in the file LICENSE.md at the top level
 # directory of fdspsp.
 #
+
+
+from os import path
+
+
+TEST_DIR = path.dirname(path.abspath(__file__))
+FDSRESULTS_DIR = path.join(TEST_DIR, "fdsresults")

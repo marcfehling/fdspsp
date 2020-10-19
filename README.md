@@ -35,6 +35,21 @@ from fdspsp import *
 ```
 
 
+## Testing
+
+Testing `fdspsp` requires particle data from `FDS` simulations. For this purpose, each test script in `fdspsp` comes with a corresponding `FDS` input file.
+
+First, run all relevant `FDS` simulations by calling the following shell script from the project directory like this:
+```
+$ ./tests/run_all_fds_cases.sh /path/to/fds_executable
+```
+
+Finally, run the testsuite by simply calling:
+```
+$ pytest
+```
+
+
 ## Publications
 
 This toolbox has been developed to characterize water sprays and fire balls in the following literature.

@@ -1,0 +1,33 @@
+!!
+!! Copyright (c) 2020 by the FireDynamics authors
+!!
+!! This file is part of the FDS particle spray postprocessor (fdspsp).
+!!
+!! fdspsp is free software; you can use it, redistribute it, and/or
+!! modify it under the terms of the MIT License. The full text of the
+!! license can be found in the file LICENSE.md at the top level
+!! directory of fdspsp.
+!!
+
+
+&HEAD CHID='000_distribution_cube_full',
+      TITLE='000: uniform particle distribution in an entire cube' /
+
+&TIME T_END=1., DT=1., LOCK_TIME_STEP=.TRUE. /
+
+&MESH ID='1' IJK=3,3,3, XB=0.0,1.0,0.0,1.0,0.0,1.0 /
+&MESH ID='2' IJK=3,3,3, XB=1.0,2.0,0.0,1.0,0.0,1.0 /
+&MESH ID='3' IJK=3,3,3, XB=0.0,1.0,1.0,2.0,0.0,1.0 /
+&MESH ID='4' IJK=3,3,3, XB=1.0,2.0,1.0,2.0,0.0,1.0 /
+&MESH ID='5' IJK=3,3,3, XB=0.0,1.0,0.0,1.0,1.0,2.0 /
+&MESH ID='6' IJK=3,3,3, XB=1.0,2.0,0.0,1.0,1.0,2.0 /
+&MESH ID='7' IJK=3,3,3, XB=0.0,1.0,1.0,2.0,1.0,2.0 /
+&MESH ID='8' IJK=3,3,3, XB=1.0,2.0,1.0,2.0,1.0,2.0 /
+
+
+&PART ID='tracer', MASSLESS=.TRUE., SAMPLING_FACTOR=1,
+      QUANTITIES(1:7)='PARTICLE DIAMETER', 'PARTICLE MASS', 'PARTICLE TEMPERATURE', 'PARTICLE U', 'PARTICLE V', 'PARTICLE W', 'PARTICLE WEIGHTING FACTOR' /
+
+&INIT PART_ID='tracer', XB=0.0,2.0,0.0,2.0,0.0,2.0, N_PARTICLES_PER_CELL=10 /
+
+&TAIL /

@@ -127,3 +127,21 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+
+# FDS output files
+*.binfo
+*.bnd
+*.end
+*.out
+*.prt5
+*.prt5.*
+*.sinfo
+*.smv
+*.s3d
+*.s3d.*
+*_cpu.csv
+*_git.txt
+*_hrr.csv
+*_steps.csv
