@@ -52,14 +52,14 @@ def _get_fds_dtype(name, count=1, quantities=0):
       fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_FLOAT)
     elif name == "char":
       fds_dtype += ", ({0}){1}".format(count, FDS_DTYPE_CHAR)
-    elif name == "coordinates":
+    elif name == "positions":
       fds_dtype += ", (3,{0}){1}".format(count, FDS_DTYPE_FLOAT)
     elif name == "tags":
       fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_INT)
     elif name == "quantities":
       fds_dtype += ", ({0},{1}){2}".format(quantities, count, FDS_DTYPE_FLOAT)
     else:
-      assert false, "Unknown FDS particle data type. Aborting."
+      assert False, "Unknown FDS particle data type. Aborting."
 
     # Size of block if available
     if FDS_FORTRAN_BACKWARD:
@@ -69,7 +69,7 @@ def _get_fds_dtype(name, count=1, quantities=0):
 
 
 
-def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, logs=True):
+def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None, logs=True):
   """
   Function to parse and read in all particle data written by FDS from
   one single mesh into a single file.
@@ -86,8 +86,8 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
   assert output_each > 0
   if classes is not None:
     assert all(classid >= 0 for classid in classes)
-  if ntimesteps is not None:
-    assert ntimesteps > 0
+  if n_timesteps is not None:
+    assert n_timesteps > 0
 
 
   #
@@ -141,34 +141,34 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
   _read_from_buffer(_get_fds_dtype("int"))
 
   # Read FDS version identifier
-  info["fdsversion"] = _read_from_buffer(_get_fds_dtype("int"))[0]
+  info["fds_version"] = _read_from_buffer(_get_fds_dtype("int"))[0]
 
   # Read number of classes
-  info["nclasses"] = _read_from_buffer(_get_fds_dtype("int"))[0]
+  info["n_classes"] = _read_from_buffer(_get_fds_dtype("int"))[0]
   # If user did not provide any class identifiers, consider all by default
   if classes is None:
-    classes = list(range(info["nclasses"]))
+    classes = list(range(info["n_classes"]))
 
   # Read quantitiy properties
   # Create empty lists for each particle class
-  info["nquantities"] = [None for _ in range(info["nclasses"])]
-  info["qlabels"] = [[] for _ in range(info["nclasses"])]
-  info["qunits"] = [[] for _ in range(info["nclasses"])]
+  info["n_quantities"] = [None for _ in range(info["n_classes"])]
+  info["q_labels"] = [[] for _ in range(info["n_classes"])]
+  info["q_units"] = [[] for _ in range(info["n_classes"])]
 
   # Loop over all classes and parse their individual quantity labels
   # and units
-  for ic in range(info["nclasses"]):
+  for ic in range(info["n_classes"]):
     # Read number of quantities for current  class and skip a placeholder
-    info["nquantities"][ic] = _read_from_buffer(_get_fds_dtype("int", count=2))[0]
+    info["n_quantities"][ic] = _read_from_buffer(_get_fds_dtype("int", count=2))[0]
 
     # Read particle quantities as character lists, add as strings to the
     # info lists
-    for _ in range(info["nquantities"][ic]):
+    for _ in range(info["n_quantities"][ic]):
       qlabel = _read_from_buffer(_get_fds_dtype("char", count=30))
-      info["qlabels"][ic].append(qlabel.decode())
+      info["q_labels"][ic].append(qlabel.decode())
 
       qunit = _read_from_buffer(_get_fds_dtype("char", count=30))
-      info["qunits"][ic].append(qunit.decode())
+      info["q_units"][ic].append(qunit.decode())
 
 
   #
@@ -188,24 +188,16 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
 
   # Size of zero particles for each particle class in a single timestep
   zero_particles_size = [
-    _get_fds_dtype("coordinates", count=0).itemsize +
+    _get_fds_dtype("positions", count=0).itemsize +
     _get_fds_dtype("tags", count=0).itemsize +
-    (_get_fds_dtype("quantities", count=0, quantities=info["nquantities"][ic]).itemsize
-      if info["nquantities"][ic] > 0 else 0)
-    for ic in range(info["nclasses"])]
-
-  """
-  zero_particles_size =                               \
-    _get_fds_dtype("coordinates", count=0).itemsize + \
-    _get_fds_dtype("tags", count=0).itemsize +        \
-    [_get_fds_dtype("quantities", count=0, quantities=info["nquantities"][ic]).itemsize
-     if info["nquantities"][ic] > 0 else 0 for ic in range(info["nclasses"])]
-  """
+    (_get_fds_dtype("quantities", count=0, quantities=info["n_quantities"][ic]).itemsize
+     if info["n_quantities"][ic] > 0 else 0)
+    for ic in range(info["n_classes"])]
 
   # Size of a timestep without any particles in all classes
   # Current timestep
   empty_timestep_size = _get_fds_dtype("float").itemsize
-  for ic in range(info["nclasses"]):
+  for ic in range(info["n_classes"]):
     empty_timestep_size += (
       # Number of particles is zero
       _get_fds_dtype("int").itemsize +
@@ -216,19 +208,19 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
 
   # Create empty lists for each particle class
   times = []
-  nparts = [[] for _ in range(info["nclasses"])]
-  xps = [[] for _ in range(info["nclasses"])]
-  tags = [[] for _ in range(info["nclasses"])]
-  qs = [[[] for _ in range(info["nquantities"][ic])]
-        for ic in range(info["nclasses"])]
+  n_particles = [[] for _ in range(info["n_classes"])]
+  positions = [[] for _ in range(info["n_classes"])]
+  tags = [[] for _ in range(info["n_classes"])]
+  quantities = [[[] for _ in range(info["n_quantities"][ic])]
+                for ic in range(info["n_classes"])]
 
   timestep = 0
   while file_mm_pos < file_mm.size():
     # If all remaining timesteps have no particles, we will skip this file
-    if ntimesteps:
-      ntimesteps_estimate_if_remaining_steps_empty = \
-        timestep + 1 + (file_mm.size() - file_mm_pos) // empty_timestep_size
-      if ntimesteps_estimate_if_remaining_steps_empty == ntimesteps:
+    if n_timesteps:
+      n_timesteps_estimate_if_remaining_steps_empty = \
+        timestep + (file_mm.size() - file_mm_pos) // empty_timestep_size
+      if n_timesteps_estimate_if_remaining_steps_empty == n_timesteps:
         if logs:
           print("No more particles. Skip remaining file.")
         file_mm_pos = file_mm.size()
@@ -243,55 +235,55 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
       times.append(time_at_timestep)
 
     # Read data for each particle class
-    for ic in range(info["nclasses"]):
+    for ic in range(info["n_classes"]):
       # Decide whether we want to process this particle class
       skip_class = ic not in classes
       skip_current = skip_timestep or skip_class
 
       # Read number of particles
-      npart = _read_from_buffer(_get_fds_dtype("int"))[0]
+      n_particle = _read_from_buffer(_get_fds_dtype("int"))[0]
 
       # If no particles were found, skip this timestep
-      if npart == 0:
+      if n_particle == 0:
         file_mm_pos += zero_particles_size[ic]
 
         # Store empty data if required
         if not skip_current:
-          nparts[ic].append(0)
-          xps[ic].append([np.array([]),
-                          np.array([]),
-                          np.array([])])
+          n_particles[ic].append(0)
+          positions[ic].append([np.array([]),
+                                np.array([]),
+                                np.array([])])
           tags[ic].append(np.array([]))
-          for iq in range(info["nquantities"][ic]):
-            qs[ic][iq].append(np.array([]))
+          for iq in range(info["n_quantities"][ic]):
+            quantities[ic][iq].append(np.array([]))
 
         continue
 
-      # Read coordinate lists
-      raw_xyz = _read_from_buffer(_get_fds_dtype("coordinates",
-                                  count=npart),
-                                  skip=skip_current)
+      # Read position lists
+      raw_positions = _read_from_buffer(_get_fds_dtype("positions",
+                                                       count=n_particle),
+                                        skip=skip_current)
       # Read tags
-      raw_tag = _read_from_buffer(_get_fds_dtype("tags",
-                                  count=npart),
-                                  skip=skip_current)
+      raw_tags = _read_from_buffer(_get_fds_dtype("tags",
+                                                  count=n_particle),
+                                   skip=skip_current)
       # Read each quantity data, if there is any
       raw_qs = None
-      if info["nquantities"][ic] > 0:
-        raw_qs = _read_from_buffer(_get_fds_dtype("quantities",
-                                   count=npart,
-                                   quantities=info["nquantities"][ic]),
-                                   skip=skip_current)
+      if info["n_quantities"][ic] > 0:
+        raw_quantities = _read_from_buffer(_get_fds_dtype("quantities",
+                                                          count=n_particle,
+                                                          quantities=info["n_quantities"][ic]),
+                                           skip=skip_current)
 
       # Store data if required
       if not skip_current:
-        nparts[ic].append(npart)
-        xps[ic].append([np.copy(raw_xyz[0]),
-                        np.copy(raw_xyz[1]),
-                        np.copy(raw_xyz[2])])
-        tags[ic].append(np.copy(raw_tag))
-        for iq in range(info["nquantities"][ic]):
-          qs[ic][iq].append(np.copy(raw_qs[iq]))
+        n_particles[ic].append(n_particle)
+        positions[ic].append([np.copy(raw_positions[0]),
+                              np.copy(raw_positions[1]),
+                              np.copy(raw_positions[2])])
+        tags[ic].append(np.copy(raw_tags))
+        for iq in range(info["n_quantities"][ic]):
+          quantities[ic][iq].append(np.copy(raw_quantities[iq]))
 
     # Continue with next timestep
     timestep += 1
@@ -299,8 +291,8 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
   assert file_mm_pos == file_mm.size()
 
   # Add number of timesteps and outputsteps to dict
-  info["ntimesteps"] = timestep
-  info["noutputsteps"] = len(times)
+  info["n_timesteps"] = timestep
+  info["n_outputsteps"] = len(times)
 
   if logs:
     data_size = file_mm.size()
@@ -311,7 +303,7 @@ def _read_particle_file(filename, output_each=1, classes=None, ntimesteps=None, 
 
   file_object.close()
 
-  return info, times, nparts, xps, tags, qs
+  return info, times, n_particles, positions, tags, quantities
 
 
 
@@ -337,7 +329,7 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
 
   # Read very first file to know the total number of timesteps
   result_first = _read_particle_file(filelist.pop(0),
-                                     output_each, classes, ntimesteps=None)
+                                     output_each, classes, n_timesteps=None)
   # If there are no more files, we are done
   if not filelist:
     return result_first
@@ -352,7 +344,7 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
   if parallel:
     pool = Pool(None)
     worker = partial(_read_particle_file,
-                     output_each=output_each, classes=classes, ntimesteps=info["ntimesteps"])
+                     output_each=output_each, classes=classes, n_timesteps=info["n_timesteps"])
     results[1:] = pool.map(worker, filelist)
     pool.close()
     pool.join()
@@ -360,7 +352,7 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
     for filename in filelist:
       results.append(
         _read_particle_file(filename,
-                            output_each, classes, info["ntimesteps"]))
+                            output_each, classes, info["n_timesteps"]))
 
   if logs:
     print("Finished reading.")
@@ -372,52 +364,53 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
 
   # Calculate global number of particles for every particle class in
   # each timestep
-  nparts = [[0] * info["noutputsteps"]] * info["nclasses"]
+  n_particles = [[0] * info["n_outputsteps"]] * info["n_classes"]
   for res in results:
-    local_nparts = res[2]
-    for ic in range(info["nclasses"]):
-      local_noutputsteps = len(local_nparts[ic])
-      for iout in range(local_noutputsteps):
-        nparts[ic][iout] += local_nparts[ic][iout]
+    local_n_particles = res[2]
+    for ic in range(info["n_classes"]):
+      for iout, local_n_particle in enumerate(local_n_particles[ic]):
+        n_particles[ic][iout] += local_n_particle
 
   # Prepare empty data containers one after another to avoid memory
   # fragmentation
-  xps = [[[np.empty(nparts[ic][iout]),
-           np.empty(nparts[ic][iout]),
-           np.empty(nparts[ic][iout])]
-           for iout in range(info["noutputsteps"])]
-          for ic in range(info["nclasses"])]
-  tags = [[np.empty(nparts[ic][iout])
-           for iout in range(info["noutputsteps"])]
-          for ic in range(info["nclasses"])]
-  qs = [[[np.empty(nparts[ic][iout])
-          for iout in range(info["noutputsteps"])]
-         for _ in range(info["nquantities"][ic])]
-        for ic in range(info["nclasses"])]
+  positions = [[[np.empty(n_particles[ic][iout]),
+                 np.empty(n_particles[ic][iout]),
+                 np.empty(n_particles[ic][iout])]
+                 for iout in range(info["n_outputsteps"])]
+                for ic in range(info["n_classes"])]
+  tags = [[np.empty(n_particles[ic][iout])
+           for iout in range(info["n_outputsteps"])]
+          for ic in range(info["n_classes"])]
+  quantities = [[[np.empty(n_particles[ic][iout])
+                  for iout in range(info["n_outputsteps"])]
+                 for _ in range(info["n_quantities"][ic])]
+                for ic in range(info["n_classes"])]
 
   # Offsets to build consecutive buffer
-  offsets = [np.zeros(info["noutputsteps"], dtype="int")
-             for _ in range(info["nclasses"])]
+  offsets = [np.zeros(info["n_outputsteps"], dtype="int")
+             for _ in range(info["n_classes"])]
 
   # Attach data
   for res in results:
-    _, _, local_nparts, local_xps, local_tags, local_qs = res
+    _, _, local_n_particles, local_positions, local_tags, local_quantities = res
 
-    for ic in range(info["nclasses"]):
-      local_noutputsteps = len(local_nparts[ic])
-      for iout in range(local_noutputsteps):
+    for ic in range(info["n_classes"]):
+      for iout, n in enumerate(local_n_particles[ic]):
         o = offsets[ic][iout]
-        n = local_nparts[ic][iout]
-        xps[ic][iout][0][o:o+n] = local_xps[ic][iout][0]
-        xps[ic][iout][1][o:o+n] = local_xps[ic][iout][1]
-        xps[ic][iout][2][o:o+n] = local_xps[ic][iout][2]
-        tags[ic][iout][o:o+n] = local_tags[ic][iout]
-        for iq in range(info["nquantities"][ic]):
-          qs[ic][iq][iout][o:o+n] = local_qs[ic][iq][iout]
+        positions[ic][iout][0][o:o+n] = np.copy(local_positions[ic][iout][0])
+        positions[ic][iout][1][o:o+n] = np.copy(local_positions[ic][iout][1])
+        positions[ic][iout][2][o:o+n] = np.copy(local_positions[ic][iout][2])
+        tags[ic][iout][o:o+n] = np.copy(local_tags[ic][iout])
+        for iq in range(info["n_quantities"][ic]):
+          quantities[ic][iq][iout][o:o+n] = np.copy(local_quantities[ic][iq][iout])
 
         offsets[ic][iout] += n
 
-  return info, times, nparts, xps, tags, qs
+  for ic in range(info["n_classes"]):
+    for iout, n_particle in enumerate(n_particles[ic]):
+      assert offsets[ic][iout] == n_particle
+
+  return info, times, n_particles, positions, tags, quantities
 
 
 
@@ -456,43 +449,43 @@ class ParticleData:
     Contains meta information about the dataset, as:
       - filename : str
           The name of the read datafile
-      - fdsversion : int
+      - fds_version : int
           Data has been generated with this FDS version
-      - nclasses : int
+      - n_classes : int
           Number of particle classes from the FDS simulation
-      - ntimesteps : int
+      - n_timesteps : int
           Number of total timesteps from the FDS simulation
-      - noutputsteps : int
+      - n_outputsteps : int
           Number of timesteps that have been read with fdspsp, i.e.,
-          noutputsteps = ntimesteps // output_each + 1
-      - nquantities : list[i1] -> int
+          n_outputsteps = n_timesteps // output_each + 1
+      - n_quantities : list[i1] -> int
           Number of quantities for particle class i1
-      - qlabels : list[i1] -> str
+      - q_labels : list[i1] -> str
           List of quantity labels for particle class i1
-      - qunits : list[i1] -> str
+      - q_units : list[i1] -> str
           List of quantity units for particle class i1
 
-  nparts : list[i1][i2] -> int
+  n_particles : list[i1][i2] -> int
     Number of particles in class i1 at output step i2
 
   times : list[i1] -> float
     Time of output step i1
 
-  xps : list[i1][i2][i3] -> np.array(float)
-    xps holds coordinate lists (as numpy-arrays) for particle class i1
-    at output step i2 for component (x,y,z) i3, where the length of the
-    array is given by the number of particles of the selected class and
-    step, i.e., nparts[i1][i2]
+  positions : list[i1][i2][i3] -> np.array(float)
+    positions holds coordinate lists (as numpy-arrays) for particle
+    class i1 at output step i2 for component (x,y,z) i3, where the
+    length of the array is given by the number of particles of the
+    selected class and step, i.e., n_particles[i1][i2]
 
   tags : list[i1][i2] -> np.array(int)
     numpy-array of particle tags for class i1 and output step i2
 
-  qs : list[i1][i2][i3] -> np.array(float)
+  quantities : list[i1][i2][i3] -> np.array(float)
     numpy-array of particle quantity i2 for class i1 and output step i3;
     the number of available quantities for the selected particle class
-    is given in info["nquantities"][i1]
+    is given in info["n_quantities"][i1]
   """
 
   def __init__(self, filestem, fileextension="prt5", output_each=1, classes=None, logs=True, parallel=True):
-    self.info, self.times, self.nparts, self.xps, self.tags, self.qs = \
+    self.info, self.times, self.n_particles, self.positions, self.tags, self.quantities = \
       _read_multiple_particle_files(filestem, fileextension, output_each, classes, logs, parallel)

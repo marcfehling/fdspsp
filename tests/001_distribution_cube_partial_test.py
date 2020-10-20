@@ -18,24 +18,24 @@ Read particle data and verify correctness.
 
 from os import path
 
-from fdspsp.read import ParticleData
+from fdspsp import *
 
 from tests import FDSRESULTS_DIR
 
 
-pdata = ParticleData(path.join(FDSRESULTS_DIR,
-                               "001_distribution_cube_partial"))
-classid = 0
+pdata = read.ParticleData(path.join(FDSRESULTS_DIR,
+                                    "001_distribution_cube_partial"))
+class_id = 0
 
 
-def test_nparticles():
+def test_n_particles():
   # verify total number of particles in each time step
   #   (6x5x3 cells) x 10 particles/cell
-  for npart in pdata.nparts[classid]:
-    assert npart == 900
+  for n_part in pdata.n_particles[class_id]:
+    assert n_part == 900
 
 
-def test_nparticles_per_cell():
+def test_n_particles_per_cell():
   return 0
   # verify that each cell contains exactly 10 cells
   # cgrid = CartesianGrid()
