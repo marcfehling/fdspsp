@@ -24,11 +24,12 @@ from fdspsp.read import ParticleData
 from tests import FDSRESULTS_DIR
 
 
-def test_distribution_cube_remove():
-  pdata = ParticleData(path.join(FDSRESULTS_DIR,
-                                 "002_distribution_cube_remove"))
-  classid = 0
+pdata = ParticleData(path.join(FDSRESULTS_DIR,
+                               "002_distribution_cube_remove"))
+classid = 0
 
+
+def test_nparticles():
   # verify total number of particles in each time step
   #   step 0: (6x6x6 cells) x 10 particles/cell
   #   step 0: (6x6x6 cells) x  0 particles/cell
@@ -40,6 +41,9 @@ def test_distribution_cube_remove():
     else:
       assert False
 
+
+def test_nparticles_per_cell():
+  return 0
   # verify that each cell contains exactly 10 cells
   # cgrid = CartesianGrid()
   # for cell in cgrid:
