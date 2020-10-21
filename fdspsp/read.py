@@ -26,47 +26,46 @@ import numpy as np
 
 
 def _get_fds_dtype(name, count=1, quantities=0):
-    """
-    Returns numpy.dtype on various FDS particle data types for reading
-    from binary files.
-    """
+  """
+  Returns numpy.dtype on various FDS particle data types for reading
+  from binary files.
+  """
 
-    # As the binary representation of raw data is compiler dependent,
-    # this information must be provided by the user.
-    # i4 -> 32 bit integer
-    FDS_DTYPE_INT = "i4"
-    # f4 -> 32 bit floating point
-    FDS_DTYPE_FLOAT = "f4"
-    # a  ->  8 bit character
-    FDS_DTYPE_CHAR = "a"
-    # sets whether blocks are ended with the size of the block
-    FDS_FORTRAN_BACKWARD = True
+  # As the binary representation of raw data is compiler dependent,
+  # this information must be provided by the user.
+  # i4 -> 32 bit integer
+  FDS_DTYPE_INT = "i4"
+  # f4 -> 32 bit floating point
+  FDS_DTYPE_FLOAT = "f4"
+  # a  ->  8 bit character
+  FDS_DTYPE_CHAR = "a"
+  # sets whether blocks are ended with the size of the block
+  FDS_FORTRAN_BACKWARD = True
 
-    # Identifier LUPF
-    fds_dtype = "{0}".format(FDS_DTYPE_INT)
+  # Identifier LUPF
+  fds_dtype = "{0}".format(FDS_DTYPE_INT)
 
-    # Choose data type
-    if name == "int":
-      fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_INT)
-    elif name == "float":
-      fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_FLOAT)
-    elif name == "char":
-      fds_dtype += ", ({0}){1}".format(count, FDS_DTYPE_CHAR)
-    elif name == "positions":
-      fds_dtype += ", (3,{0}){1}".format(count, FDS_DTYPE_FLOAT)
-    elif name == "tags":
-      fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_INT)
-    elif name == "quantities":
-      fds_dtype += ", ({0},{1}){2}".format(quantities, count, FDS_DTYPE_FLOAT)
-    else:
-      assert False, "Unknown FDS particle data type. Aborting."
+  # Choose data type
+  if name == "int":
+    fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_INT)
+  elif name == "float":
+    fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_FLOAT)
+  elif name == "char":
+    fds_dtype += ", ({0}){1}".format(count, FDS_DTYPE_CHAR)
+  elif name == "positions":
+    fds_dtype += ", (3,{0}){1}".format(count, FDS_DTYPE_FLOAT)
+  elif name == "tags":
+    fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_INT)
+  elif name == "quantities":
+    fds_dtype += ", ({0},{1}){2}".format(quantities, count, FDS_DTYPE_FLOAT)
+  else:
+    assert False, "Unknown FDS particle data type. Aborting."
 
-    # Size of block if available
-    if FDS_FORTRAN_BACKWARD:
-      fds_dtype += ", {0}".format(FDS_DTYPE_INT)
+  # Size of block if available
+  if FDS_FORTRAN_BACKWARD:
+    fds_dtype += ", {0}".format(FDS_DTYPE_INT)
 
-    return np.dtype(fds_dtype)
-
+  return np.dtype(fds_dtype)
 
 
 def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None, logs=True):
@@ -89,7 +88,6 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
   if n_timesteps is not None:
     assert n_timesteps > 0
 
-
   #
   # INITIALIZATION: open file
   #
@@ -106,7 +104,6 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
   file_mm.flush()
 
   file_mm_pos = 0
-
 
   def _read_from_buffer(dtype, skip=False):
     """
@@ -130,12 +127,11 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
     # the binary file
     return data_raw[0][1]
 
-
   #
   # READ: miscellaneous data
   #
 
-  info = {"filename" : filename}
+  info = {"filename": filename}
 
   # Read endianess flag written by FDS which will be ignored
   _read_from_buffer(_get_fds_dtype("int"))
@@ -159,7 +155,8 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
   # and units
   for ic in range(info["n_classes"]):
     # Read number of quantities for current  class and skip a placeholder
-    info["n_quantities"][ic] = _read_from_buffer(_get_fds_dtype("int", count=2))[0]
+    info["n_quantities"][ic] = _read_from_buffer(
+        _get_fds_dtype("int", count=2))[0]
 
     # Read particle quantities as character lists, add as strings to the
     # info lists
@@ -169,7 +166,6 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
 
       qunit = _read_from_buffer(_get_fds_dtype("char", count=30))
       info["q_units"][ic].append(qunit.decode())
-
 
   #
   # READ: particle data
@@ -188,23 +184,22 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
 
   # Size of zero particles for each particle class in a single timestep
   zero_particles_size = [
-    _get_fds_dtype("positions", count=0).itemsize +
-    _get_fds_dtype("tags", count=0).itemsize +
-    (_get_fds_dtype("quantities", count=0, quantities=info["n_quantities"][ic]).itemsize
-     if info["n_quantities"][ic] > 0 else 0)
-    for ic in range(info["n_classes"])]
+      _get_fds_dtype("positions", count=0).itemsize +
+      _get_fds_dtype("tags", count=0).itemsize +
+      (_get_fds_dtype("quantities", count=0, quantities=info["n_quantities"][ic]).itemsize
+          if info["n_quantities"][ic] > 0 else 0)
+      for ic in range(info["n_classes"])]
 
   # Size of a timestep without any particles in all classes
   # Current timestep
   empty_timestep_size = _get_fds_dtype("float").itemsize
   for ic in range(info["n_classes"]):
     empty_timestep_size += (
-      # Number of particles is zero
-      _get_fds_dtype("int").itemsize +
-      # Size that zero particles occupy
-      zero_particles_size[ic]
+        # Number of particles is zero
+        _get_fds_dtype("int").itemsize +
+        # Size that zero particles occupy
+        zero_particles_size[ic]
     )
-
 
   # Create empty lists for each particle class
   times = []
@@ -219,7 +214,7 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
     # If all remaining timesteps have no particles, we will skip this file
     if n_timesteps:
       n_timesteps_estimate_if_remaining_steps_empty = \
-        timestep + (file_mm.size() - file_mm_pos) // empty_timestep_size
+          timestep + (file_mm.size() - file_mm_pos) // empty_timestep_size
       if n_timesteps_estimate_if_remaining_steps_empty == n_timesteps:
         if logs:
           print("No more particles. Skip remaining file.")
@@ -306,7 +301,6 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
   return info, times, n_particles, positions, tags, quantities
 
 
-
 def _read_multiple_particle_files(filestem, fileextension, output_each=1, classes=None, logs=True, parallel=True):
   """
   Function to parse and read in all particle data written by FDS from
@@ -321,7 +315,6 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
   filelist = sorted(glob(filename_wildcard))
   assert len(filelist) > 0, ("No files were found with the specified "
                              "credentials.")
-
 
   #
   # READ: all files
@@ -351,12 +344,11 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
   else:
     for filename in filelist:
       results.append(
-        _read_particle_file(filename,
-                            output_each, classes, info["n_timesteps"]))
+          _read_particle_file(filename,
+                              output_each, classes, info["n_timesteps"]))
 
   if logs:
     print("Finished reading.")
-
 
   #
   # CONCATENATE: results of all files
@@ -376,8 +368,8 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
   positions = [[[np.empty(n_particles[ic][iout]),
                  np.empty(n_particles[ic][iout]),
                  np.empty(n_particles[ic][iout])]
-                 for iout in range(info["n_outputsteps"])]
-                for ic in range(info["n_classes"])]
+                for iout in range(info["n_outputsteps"])]
+               for ic in range(info["n_classes"])]
   tags = [[np.empty(n_particles[ic][iout])
            for iout in range(info["n_outputsteps"])]
           for ic in range(info["n_classes"])]
@@ -402,7 +394,8 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
         positions[ic][iout][2][o:o+n] = np.copy(local_positions[ic][iout][2])
         tags[ic][iout][o:o+n] = np.copy(local_tags[ic][iout])
         for iq in range(info["n_quantities"][ic]):
-          quantities[ic][iq][iout][o:o+n] = np.copy(local_quantities[ic][iq][iout])
+          quantities[ic][iq][iout][o:o +
+                                   n] = np.copy(local_quantities[ic][iq][iout])
 
         offsets[ic][iout] += n
 
@@ -411,7 +404,6 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
       assert offsets[ic][iout] == n_particle
 
   return info, times, n_particles, positions, tags, quantities
-
 
 
 class ParticleData:
@@ -488,4 +480,5 @@ class ParticleData:
 
   def __init__(self, filestem, fileextension="prt5", output_each=1, classes=None, logs=True, parallel=True):
     self.info, self.times, self.n_particles, self.positions, self.tags, self.quantities = \
-      _read_multiple_particle_files(filestem, fileextension, output_each, classes, logs, parallel)
+        _read_multiple_particle_files(
+            filestem, fileextension, output_each, classes, logs, parallel)

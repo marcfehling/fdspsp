@@ -60,7 +60,6 @@ class ParticleType:
     self.weighting_factor_id = weighting_factor_id
 
 
-
 class ParameterGlobal:
   """
   Parameter container storing all necessary information about the
@@ -82,7 +81,7 @@ class ParameterGlobal:
   def __init__(self, reference_position, particle_types, direction=None):
     # Avoid mutable default arguments warning
     if direction is None:
-        direction = [True,True,True]
+      direction = [True, True, True]
 
     # Check validity of user input
     assert len(reference_position) == 3
@@ -109,7 +108,6 @@ class ParameterGlobal:
             "       - Velocity IDs: ", ptype.velocity_ids, "\n",
             "       - Weighting Factor ID: ", ptype.weighting_factor_id,
             sep="", file=file)
-
 
 
 class ParameterCartesian:
@@ -152,15 +150,16 @@ class ParameterCartesian:
     print(" * ParameterCartesian:\n",
           "    - Origin: Reference position\n",
           "    - Discretization coordinate 1 [m]:\n",
-          "       - range: [", -0.5*self.length_xi, ", ", 0.5*self.length_xi, "]\n",
+          "       - range: [", -0.5 *
+          self.length_xi, ", ", 0.5*self.length_xi, "]\n",
           "       - stepsize: ", self.d_xi, "\n",
           "       - steps: ", self.n_xi, "\n",
           "    - Discretization coordinate 2 [m]:\n",
-          "       - range: [", -0.5*self.length_xj, ", ", 0.5*self.length_xj, "]\n",
+          "       - range: [", -0.5 *
+          self.length_xj, ", ", 0.5*self.length_xj, "]\n",
           "       - stepsize: ", self.d_xj, "\n",
           "       - steps: ", self.n_xj,
           sep="", file=file)
-
 
 
 class ParameterPolar:
