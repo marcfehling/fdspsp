@@ -23,16 +23,28 @@ from fdspsp import *
 from tests import FDSRESULTS_DIR
 
 
-pdata = read.ParticleData(path.join(FDSRESULTS_DIR,
-                                    "000_distribution_cube_full"))
-class_id = 0
+path_to_data = path.join(FDSRESULTS_DIR, "000_distribution_cube_full")
+
+
+def test_particle_selection():
+  """
+  Check selection of particle classes
+  """
+  read.ParticleData(path_to_data, classes=["tracer"])
+  read.ParticleData(path_to_data, classes=["tracer_noquantities"])
+
+
+pdata = read.ParticleData(path_to_data)
 
 
 def test_n_particles():
-  # verify total number of particles in each time step
-  #   (6x6x6 cells) x 10 particles/cell
-  for n_part in pdata.n_particles[class_id]:
-    assert n_part == 2160
+  """
+  verify total number of particles in each time step for each class
+    (6x6x6 cells) x 10 particles/cell
+  """
+  for n_particles in pdata.n_particles.values():
+    for n_particles_per_outputstep in n_particles:
+      assert n_particles_per_outputstep == 2160
 
 
 def test_n_particles_per_cell():

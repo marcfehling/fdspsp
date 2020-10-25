@@ -24,22 +24,34 @@ from fdspsp import *
 from tests import FDSRESULTS_DIR
 
 
-pdata = read.ParticleData(path.join(FDSRESULTS_DIR,
-                                    "002_distribution_cube_remove"))
-class_id = 0
+path_to_data = path.join(FDSRESULTS_DIR, "002_distribution_cube_remove")
+
+
+def test_particle_selection():
+  """
+  Check selection of particle classes
+  """
+  read.ParticleData(path_to_data, classes=["tracer"])
+  read.ParticleData(path_to_data, classes=["tracer_noquantities"])
+
+
+pdata = read.ParticleData(path_to_data)
 
 
 def test_n_particles():
-  # verify total number of particles in each time step
-  #   step 0: (6x6x6 cells) x 10 particles/cell
-  #   step 0: (6x6x6 cells) x  0 particles/cell
-  for out in range(pdata.info["n_outputsteps"]):
-    if out == 0:
-      assert pdata.n_particles[class_id][out] == 2160
-    elif out == 1:
-      assert pdata.n_particles[class_id][out] == 0
-    else:
-      assert False
+  """
+  verify total number of particles in each time step for each class
+    output step 0: (6x6x6 cells) x 10 particles/cell
+    output step 1: (6x6x6 cells) x  0 particles/cell
+  """
+  for n_particles in pdata.n_particles.values():
+    for o_step in range(pdata.n_outputsteps):
+      if o_step == 0:
+        assert n_particles[o_step] == 2160
+      elif o_step == 1:
+        assert n_particles[o_step] == 0
+      else:
+        assert False
 
 
 def test_n_particles_per_cell():

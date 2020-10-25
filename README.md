@@ -1,4 +1,4 @@
-# FDS Particle Spray Postprocessing (fdspsp)
+# FDS particle spray postprocessor (fdspsp)
 
 `fdspsp` offers tools to postprocess particle data generated with NIST's
 [Fire Dynamics Simulator (FDS)](https://github.com/firemodels/fds).
@@ -66,7 +66,8 @@ $ pytest
 
 As this is an open source project, we welcome any kind of contribution!
 Before submitting a pull request, make sure you ran the testsuite
-successfully and your code conforms to our code style.
+successfully and your code conforms to the
+[`PEP 8`](https://www.python.org/dev/peps/pep-0008/) code style.
 
 For code formatting, we use the automatic tool
 [`autopep8`](https://github.com/hhatto/autopep8). Please prepare the
@@ -85,18 +86,20 @@ you use `fdspsp`.
 ```
 @article{fdspsp2020,
   author  = {Marc Fehling and Michael Krampf and Lukas Arnold},
-  title   = {? Characterizing the liftoff phase of impact-induced fireballs with particle spray simulations},
+  title   = {? Characterizing the liftoff phase of impact-induced
+             fireballs with particle spray simulations},
   journal = {? Fire Safety Journal},
   volume  = {?},
   issue   = {?},
-  year    = {? 2020},
+  year    = {? 2021},
   pages   = {?},
   doi     = {?}
 }
 
 @mastersthesis{krampf2018,
   author  = {Michael Krampf},
-  title   = {{C}harakterisierung der {L}iftoff {P}hase partikelbasierter {F}euerb{\"a}lle},
+  title   = {{C}harakterisierung der {L}iftoff {P}hase partikelbasierter
+             {F}euerb{\"a}lle},
   school  = {Univ. Wuppertal},
   pages   = {69 p},
   year    = {2018},

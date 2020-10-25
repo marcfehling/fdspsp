@@ -10,9 +10,9 @@
 #
 
 """
-READ module: Read
+READ module:
 
-For convenience, everything in ParticleData class.
+Tools to read particle data from FDS simulations.
 """
 
 
@@ -21,14 +21,34 @@ from glob import glob
 from mmap import mmap, ACCESS_READ
 from multiprocessing import Pool
 from time import time
+from warnings import warn
 
 import numpy as np
 
 
-def _get_fds_dtype(name, count=1, quantities=0):
+def _get_fds_dtype(name, count=1, n_quantities=0):
   """
   Returns numpy.dtype on various FDS particle data types for reading
-  from binary files.
+  one of their instances from prt5 binary files.
+
+  Parameters
+  ----------
+  name : str
+    Name for the FDS datatye. Possible values are:
+      "int", "float", "char", "positions", "tags", "quantities"
+  count : int
+    Determines the number of instances of the specified datatype to be
+    read. By default, one instance will be read.
+  n_quantities: int
+    If a 'quantities' datatype is requested, this integer specifies the
+    number of quantities associated with the dataset, for which 'count'
+    instances will be read in each case. We expect no quantities by
+    default.
+
+  Returns
+  -------
+  fds_type : numpy.dtype
+    Data type object meant for reading operations with numpy.
   """
 
   # As the binary representation of raw data is compiler dependent,
@@ -42,7 +62,7 @@ def _get_fds_dtype(name, count=1, quantities=0):
   # sets whether blocks are ended with the size of the block
   FDS_FORTRAN_BACKWARD = True
 
-  # Identifier LUPF
+  # Identifier 'LUPF'
   fds_dtype = "{0}".format(FDS_DTYPE_INT)
 
   # Choose data type
@@ -57,7 +77,7 @@ def _get_fds_dtype(name, count=1, quantities=0):
   elif name == "tags":
     fds_dtype += ", ({0},){1}".format(count, FDS_DTYPE_INT)
   elif name == "quantities":
-    fds_dtype += ", ({0},{1}){2}".format(quantities, count, FDS_DTYPE_FLOAT)
+    fds_dtype += ", ({0},{1}){2}".format(n_quantities, count, FDS_DTYPE_FLOAT)
   else:
     assert False, "Unknown FDS particle data type. Aborting."
 
@@ -68,25 +88,146 @@ def _get_fds_dtype(name, count=1, quantities=0):
   return np.dtype(fds_dtype)
 
 
-def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None, logs=True):
+def _read_smv_file(filename):
   """
-  Function to parse and read in all particle data written by FDS from
-  one single mesh into a single file.
+  Read relevant simulation properties from the smokeview information smv
+  file.
 
-  See below class documentation for details on parameters and returned
-  values.
+  Parameters
+  ----------
+  filename : str
+    Name of the smv file.
 
-  The optional parameter ntimesteps indicates the number of timesteps of
-  the specified FDS simulation. It will be used to identify whether
-  there are no more particles in subsequent timesteps.
+  Returns
+  -------
+  info : dict
+    Contains meta information about the original FDS dataset, as:
+      - title : str
+          Title as specified in the FDS input file
+      - fds_version : str
+          Particle data has been generated with this FDS version
+      - ch_id : str
+          Character Identifier as specified in the FDS input file
+      - n_meshes : int
+          Number of meshes on which the simulation has been performed
+      - classes : list[i1] -> str
+          Label for particle class with index i1
+  """
+
+  file_object = open(filename, 'r')
+  assert file_object, \
+      "Could not open file '{}'! Aborting.".format(filename)
+
+  # Find categories of simulation properties
+  # The succeeding line contains the corresponding value
+  info = {"classes": []}
+  while True:
+    line = file_object.readline()
+    line_stripped = line.strip()
+    if line_stripped == "TITLE":
+      next_line = file_object.readline()
+      info["title"] = next_line.strip()
+    elif line_stripped == "FDSVERSION":
+      next_line = file_object.readline()
+      info["fds_version"] = next_line.strip()
+    elif line_stripped == "CHID":
+      next_line = file_object.readline()
+      info["ch_id"] = next_line.strip()
+    elif line_stripped == "NMESHES":
+      next_line = file_object.readline()
+      info["n_meshes"] = int(next_line.strip())
+    elif line_stripped == "CLASS_OF_PARTICLES":
+      next_line = file_object.readline()
+      info["classes"].append(next_line.strip())
+    elif not line:
+      # EOF
+      break
+
+  assert len(info["classes"]) > 0, \
+      "No particle classes found in this FDS dataset!"
+
+  return info
+
+
+def _read_prt5_file(filename, classes_dict,
+                    output_each=1, n_timesteps=None, logs=True):
+  """
+  Function to read in all particle data written by FDS from one single
+  mesh into a single file.
+
+  Parameters
+  ----------
+  filename : str
+    Name of the prt5 file.
+  classes_dict : dict -> (i1:s2)
+    Specify all particle classes to be read. Translates particle class
+    indices i1 occurring in the smv and prt5 file to the corresponding
+    class label s2 from the smv file.
+  output_each : int
+    Each n-th timestep will actually be read, those inbetween will be
+    skipped. By default, every timestep will be considered.
+  n_timesteps : int
+    Integer to indicate the number of timesteps of the specified FDS
+    simulation. It will be used to identify whether there happen to be
+    no more particles in subsequent timesteps during the reading
+    process. By default, this feature is disabled.
+  logs : bool
+    Choose if logs will be printed out. This feature is enabled by
+    default.
+
+  Returns
+  -------
+  (info, n_outputsteps, times, n_particles, positions, tags, quantities)
+  with:
+
+  info : dict
+    Contains meta information about the original FDS dataset, as:
+      - filename : str
+          The name of the read datafile
+      - fds_version : str
+          Particle data has been generated with this FDS version
+      - n_classes : int
+          Number of particle classes in the simulation
+      - n_timesteps : int
+          Number of total timesteps in the FDS simulation
+      - n_quantities : list[i1] -> int
+          Number of quantities for particle class with index i1
+      - quantity_labels : list[i1][i2] -> str
+          Label for quantity with index i2 of particle class with
+          index i1
+      - quantity_units : list[i1][i2] -> str
+          Units for quantity with index i2 of particle class with
+          index i1
+
+  n_outputsteps : int
+    Number of timesteps that have been read with fdspsp, i.e.,
+    n_outputsteps = n_timesteps // output_each + 1
+
+  times : list[i1] -> float
+    Time at output step i1
+
+  n_particles : dict[s1] -> list[i2] -> int
+    Number of particles in class with label s1 at output step i2
+
+  positions : dict[s1] -> list[i2][i3] -> numpy.array(float)
+    positions holds coordinate lists (as numpy-arrays) for particle
+    class with label s1 at output step i2 for component (x,y,z) i3,
+    where the length of the array is given by the number of particles of
+    the selected class and step, i.e., n_particles[s1][i2]
+
+  tags : dict[s1] -> list[i2] -> numpy.array(int)
+    numpy-array of particle tags for class with label s1 at
+    output step i2
+
+  quantities : dict[s1][s2] -> list[i3] -> numpy.array(float)
+    numpy-array of particle quantity with label s2 for class with
+    label s1 at output step i3
   """
 
   # Verify user input
   assert output_each > 0
-  if classes is not None:
-    assert all(classid >= 0 for classid in classes)
-  if n_timesteps is not None:
-    assert n_timesteps > 0
+  assert all(c_index >= 0 for c_index in classes_dict.keys())
+  assert n_timesteps is None or n_timesteps > 0
 
   #
   # INITIALIZATION: open file
@@ -97,7 +238,8 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
     print("Reading particle file '{}'.".format(filename))
 
   file_object = open(filename, 'rb')
-  assert file_object, "Could not open file '{}'! Aborting.".format(filename)
+  assert file_object, \
+      "Could not open file '{}'! Aborting.".format(filename)
 
   # Map file content to memory
   file_mm = mmap(file_object.fileno(), 0, access=ACCESS_READ)
@@ -108,9 +250,9 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
   def _read_from_buffer(dtype, skip=False):
     """
     Reads exactly one instance of dtype from the current memory-mapped
-    file object.
+    file object and progresses the position in memory accordingly.
 
-    Results will be returned as np.ndarray.
+    Results will be returned as numpy.ndarray.
     """
 
     nonlocal file_mm, file_mm_pos
@@ -141,31 +283,29 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
 
   # Read number of classes
   info["n_classes"] = _read_from_buffer(_get_fds_dtype("int"))[0]
-  # If user did not provide any class identifiers, consider all by default
-  if classes is None:
-    classes = list(range(info["n_classes"]))
+  assert all(c_index < info["n_classes"] for c_index in classes_dict.keys())
 
   # Read quantitiy properties
   # Create empty lists for each particle class
   info["n_quantities"] = [None for _ in range(info["n_classes"])]
-  info["q_labels"] = [[] for _ in range(info["n_classes"])]
-  info["q_units"] = [[] for _ in range(info["n_classes"])]
+  info["quantity_labels"] = [[] for _ in range(info["n_classes"])]
+  info["quantity_units"] = [[] for _ in range(info["n_classes"])]
 
   # Loop over all classes and parse their individual quantity labels
   # and units
-  for ic in range(info["n_classes"]):
+  for c_index in range(info["n_classes"]):
     # Read number of quantities for current  class and skip a placeholder
-    info["n_quantities"][ic] = _read_from_buffer(
+    info["n_quantities"][c_index] = _read_from_buffer(
         _get_fds_dtype("int", count=2))[0]
 
     # Read particle quantities as character lists, add as strings to the
     # info lists
-    for _ in range(info["n_quantities"][ic]):
-      qlabel = _read_from_buffer(_get_fds_dtype("char", count=30))
-      info["q_labels"][ic].append(qlabel.decode())
+    for _ in range(info["n_quantities"][c_index]):
+      q_label = _read_from_buffer(_get_fds_dtype("char", count=30))
+      info["quantity_labels"][c_index].append(q_label.decode())
 
-      qunit = _read_from_buffer(_get_fds_dtype("char", count=30))
-      info["q_units"][ic].append(qunit.decode())
+      q_unit = _read_from_buffer(_get_fds_dtype("char", count=30))
+      info["quantity_units"][c_index].append(q_unit.decode())
 
   #
   # READ: particle data
@@ -186,35 +326,36 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
   zero_particles_size = [
       _get_fds_dtype("positions", count=0).itemsize +
       _get_fds_dtype("tags", count=0).itemsize +
-      (_get_fds_dtype("quantities", count=0, quantities=info["n_quantities"][ic]).itemsize
-          if info["n_quantities"][ic] > 0 else 0)
-      for ic in range(info["n_classes"])]
+      (_get_fds_dtype("quantities", count=0, n_quantities=info["n_quantities"][c_index]).itemsize
+          if info["n_quantities"][c_index] > 0 else 0)
+      for c_index in range(info["n_classes"])]
 
   # Size of a timestep without any particles in all classes
   # Current timestep
   empty_timestep_size = _get_fds_dtype("float").itemsize
-  for ic in range(info["n_classes"]):
+  for c_index in range(info["n_classes"]):
     empty_timestep_size += (
         # Number of particles is zero
         _get_fds_dtype("int").itemsize +
         # Size that zero particles occupy
-        zero_particles_size[ic]
+        zero_particles_size[c_index]
     )
 
   # Create empty lists for each particle class
   times = []
-  n_particles = [[] for _ in range(info["n_classes"])]
-  positions = [[] for _ in range(info["n_classes"])]
-  tags = [[] for _ in range(info["n_classes"])]
-  quantities = [[[] for _ in range(info["n_quantities"][ic])]
-                for ic in range(info["n_classes"])]
+  n_particles = {c_label: [] for c_label in classes_dict.values()}
+  positions = {c_label: [] for c_label in classes_dict.values()}
+  tags = {c_label: [] for c_label in classes_dict.values()}
+  quantities = {c_label: {q_label: []
+                          for q_label in info["quantity_labels"][c_index]}
+                for (c_index, c_label) in classes_dict.items()}
 
-  timestep = 0
+  t_step = 0
   while file_mm_pos < file_mm.size():
     # If all remaining timesteps have no particles, we will skip this file
     if n_timesteps:
       n_timesteps_estimate_if_remaining_steps_empty = \
-          timestep + (file_mm.size() - file_mm_pos) // empty_timestep_size
+          t_step + (file_mm.size() - file_mm_pos) // empty_timestep_size
       if n_timesteps_estimate_if_remaining_steps_empty == n_timesteps:
         if logs:
           print("No more particles. Skip remaining file.")
@@ -222,7 +363,7 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
         break
 
     # Decide whether we want to process this timestep
-    skip_timestep = (timestep % output_each) > 0
+    skip_timestep = (t_step % output_each) > 0
 
     # Read time of current output step
     time_at_timestep = _read_from_buffer(_get_fds_dtype("float"))[0]
@@ -230,9 +371,9 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
       times.append(time_at_timestep)
 
     # Read data for each particle class
-    for ic in range(info["n_classes"]):
+    for c_index in range(info["n_classes"]):
       # Decide whether we want to process this particle class
-      skip_class = ic not in classes
+      skip_class = c_index not in classes_dict.keys()
       skip_current = skip_timestep or skip_class
 
       # Read number of particles
@@ -240,54 +381,55 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
 
       # If no particles were found, skip this timestep
       if n_particle == 0:
-        file_mm_pos += zero_particles_size[ic]
+        file_mm_pos += zero_particles_size[c_index]
 
         # Store empty data if required
         if not skip_current:
-          n_particles[ic].append(0)
-          positions[ic].append([np.array([]),
-                                np.array([]),
-                                np.array([])])
-          tags[ic].append(np.array([]))
-          for iq in range(info["n_quantities"][ic]):
-            quantities[ic][iq].append(np.array([]))
+          c_label = classes_dict[c_index]
+          n_particles[c_label].append(0)
+          positions[c_label].append([np.array([]),
+                                     np.array([]),
+                                     np.array([])])
+          tags[c_label].append(np.array([]))
+          for q_label in info["quantity_labels"][c_index]:
+            quantities[c_label][q_label].append(np.array([]))
 
         continue
 
       # Read position lists
-      raw_positions = _read_from_buffer(_get_fds_dtype("positions",
-                                                       count=n_particle),
-                                        skip=skip_current)
+      raw_position = _read_from_buffer(_get_fds_dtype("positions",
+                                                      count=n_particle),
+                                       skip=skip_current)
       # Read tags
-      raw_tags = _read_from_buffer(_get_fds_dtype("tags",
-                                                  count=n_particle),
-                                   skip=skip_current)
+      raw_tag = _read_from_buffer(_get_fds_dtype("tags",
+                                                 count=n_particle),
+                                  skip=skip_current)
       # Read each quantity data, if there is any
-      raw_qs = None
-      if info["n_quantities"][ic] > 0:
-        raw_quantities = _read_from_buffer(_get_fds_dtype("quantities",
-                                                          count=n_particle,
-                                                          quantities=info["n_quantities"][ic]),
-                                           skip=skip_current)
+      raw_quantity = None
+      if info["n_quantities"][c_index] > 0:
+        raw_quantity = _read_from_buffer(_get_fds_dtype("quantities",
+                                                        count=n_particle,
+                                                        n_quantities=info["n_quantities"][c_index]),
+                                         skip=skip_current)
 
       # Store data if required
       if not skip_current:
-        n_particles[ic].append(n_particle)
-        positions[ic].append([np.copy(raw_positions[0]),
-                              np.copy(raw_positions[1]),
-                              np.copy(raw_positions[2])])
-        tags[ic].append(np.copy(raw_tags))
-        for iq in range(info["n_quantities"][ic]):
-          quantities[ic][iq].append(np.copy(raw_quantities[iq]))
+        c_label = classes_dict[c_index]
+        n_particles[c_label].append(n_particle)
+        positions[c_label].append([np.copy(raw_position[0]),
+                                   np.copy(raw_position[1]),
+                                   np.copy(raw_position[2])])
+        tags[c_label].append(np.copy(raw_tag))
+        for (q_index, q_label) in enumerate(info["quantity_labels"][c_index]):
+          quantities[c_label][q_label].append(np.copy(raw_quantity[q_index]))
 
     # Continue with next timestep
-    timestep += 1
+    t_step += 1
 
   assert file_mm_pos == file_mm.size()
 
-  # Add number of timesteps and outputsteps to dict
-  info["n_timesteps"] = timestep
-  info["n_outputsteps"] = len(times)
+  info["n_timesteps"] = t_step
+  n_outputsteps = len(times)
 
   if logs:
     data_size = file_mm.size()
@@ -298,31 +440,96 @@ def _read_particle_file(filename, output_each=1, classes=None, n_timesteps=None,
 
   file_object.close()
 
-  return info, times, n_particles, positions, tags, quantities
+  return info, n_outputsteps, times, n_particles, positions, tags, quantities
 
 
-def _read_multiple_particle_files(filestem, fileextension, output_each=1, classes=None, logs=True, parallel=True):
+def _read_multiple_prt5_files(filestem, classes_dict,
+                              output_each=1, logs=True, parallel=True):
   """
   Function to parse and read in all particle data written by FDS from
   multiple meshes into multiple files.
 
-  See below class documentation for details on parameters and returned
-  values.
+  Parameters
+  ----------
+  filestem : str
+    All files beginning with filestem and ending with prt5 will be read.
+  classes_dict : dict -> (i1:s2)
+    Specify all particle classes to be read. Translates particle class
+    indices i1 occurring in the smv and prt5 file to the corresponding
+    class label s2 from the smv file.
+  output_each : int
+    Each n-th timestep will actually be read, those inbetween will be
+    skipped. By default, every timestep will be considered.
+  logs : bool
+    Choose if logs will be printed out. This feature is enabled by
+    default.
+  parallel : bool
+    Decide if files from filesystem will be read in parallel. This
+    feature is enabled by default.
+
+  Returns
+  -------
+  (info, n_outputsteps, times, n_particles, positions, tags, quantities)
+  with:
+
+  info : dict
+    Contains meta information about the original FDS dataset, as:
+      - filename : str
+          The name of all read datafiles in wildcard notation
+      - fds_version : str
+          Particle data has been generated with this FDS version
+      - n_classes : int
+          Number of particle classes in the simulation
+      - n_timesteps : int
+          Number of total timesteps in the FDS simulation
+      - n_quantities : list[i1] -> int
+          Number of quantities for particle class with index i1
+      - quantity_labels : list[i1][i2] -> str
+          Label for quantity with index i2 of particle class with
+          index i1
+      - quantity_units : list[i1][i2] -> str
+          Units for quantity with index i2 of particle class with
+          index i1
+
+  n_outputsteps : int
+    Number of timesteps that have been read with fdspsp, i.e.,
+    n_outputsteps = n_timesteps // output_each + 1
+
+  times : list[i1] -> float
+    Time at output step i1
+
+  n_particles : dict[s1] -> list[i2] -> int
+    Number of particles in class with label s1 at output step i2
+
+  positions : dict[s1] -> list[i2][i3] -> numpy.array(float)
+    positions holds coordinate lists (as numpy-arrays) for particle
+    class with label s1 at output step i2 for component (x,y,z) i3,
+    where the length of the array is given by the number of particles of
+    the selected class and step, i.e., n_particles[s1][i2]
+
+  tags : dict[s1] -> list[i2] -> numpy.array(int)
+    numpy-array of particle tags for class with label s1 at
+    output step i2
+
+  quantities : dict[s1][s2] -> list[i3] -> numpy.array(float)
+    numpy-array of particle quantity with label s2 for class with
+    label s1 at output step i3
   """
 
   # Verify user input
-  filename_wildcard = filestem + "*." + fileextension
+  filename_wildcard = filestem + "*.prt5"
   filelist = sorted(glob(filename_wildcard))
-  assert len(filelist) > 0, ("No files were found with the specified "
-                             "credentials.")
+  assert len(filelist) > 0, \
+      "No files were found with the specified credentials."
 
   #
   # READ: all files
   #
 
   # Read very first file to know the total number of timesteps
-  result_first = _read_particle_file(filelist.pop(0),
-                                     output_each, classes, n_timesteps=None)
+  result_first = _read_prt5_file(filelist.pop(0),
+                                 classes_dict, output_each,
+                                 n_timesteps=None, logs=logs)
   # If there are no more files, we are done
   if not filelist:
     return result_first
@@ -330,22 +537,25 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
   # Extract global information
   info = result_first[0]
   info["filename"] = filename_wildcard
-  times = result_first[1]
+  n_outputsteps = result_first[1]
+  times = result_first[2]
 
   # Read remaining input files
   results = [result_first]
   if parallel:
     pool = Pool(None)
-    worker = partial(_read_particle_file,
-                     output_each=output_each, classes=classes, n_timesteps=info["n_timesteps"])
+    worker = partial(_read_prt5_file,
+                     classes_dict=classes_dict, output_each=output_each,
+                     n_timesteps=info["n_timesteps"], logs=logs)
     results[1:] = pool.map(worker, filelist)
     pool.close()
     pool.join()
   else:
     for filename in filelist:
       results.append(
-          _read_particle_file(filename,
-                              output_each, classes, info["n_timesteps"]))
+          _read_prt5_file(filename,
+                          classes_dict, output_each,
+                          info["n_timesteps"], logs))
 
   if logs:
     print("Finished reading.")
@@ -356,54 +566,59 @@ def _read_multiple_particle_files(filestem, fileextension, output_each=1, classe
 
   # Calculate global number of particles for every particle class in
   # each timestep
-  n_particles = [[0] * info["n_outputsteps"]] * info["n_classes"]
+  n_particles = {c_label: [0] *
+                 n_outputsteps for c_label in classes_dict.values()}
   for res in results:
-    local_n_particles = res[2]
-    for ic in range(info["n_classes"]):
-      for iout, local_n_particle in enumerate(local_n_particles[ic]):
-        n_particles[ic][iout] += local_n_particle
+    local_n_particles = res[3]
+    for c_label in classes_dict.values():
+      for (o_step, local_n_particle) in enumerate(local_n_particles[c_label]):
+        n_particles[c_label][o_step] += local_n_particle
 
   # Prepare empty data containers one after another to avoid memory
   # fragmentation
-  positions = [[[np.empty(n_particles[ic][iout]),
-                 np.empty(n_particles[ic][iout]),
-                 np.empty(n_particles[ic][iout])]
-                for iout in range(info["n_outputsteps"])]
-               for ic in range(info["n_classes"])]
-  tags = [[np.empty(n_particles[ic][iout])
-           for iout in range(info["n_outputsteps"])]
-          for ic in range(info["n_classes"])]
-  quantities = [[[np.empty(n_particles[ic][iout])
-                  for iout in range(info["n_outputsteps"])]
-                 for _ in range(info["n_quantities"][ic])]
-                for ic in range(info["n_classes"])]
+  positions = {c_label: [[np.empty(n_particles[c_label][o_step]),
+                          np.empty(n_particles[c_label][o_step]),
+                          np.empty(n_particles[c_label][o_step])]
+                         for o_step in range(n_outputsteps)]
+               for c_label in classes_dict.values()}
+  tags = {c_label: [np.empty(n_particles[c_label][o_step])
+                    for o_step in range(n_outputsteps)]
+          for c_label in classes_dict.values()}
+  quantities = {c_label: {q_label: [np.empty(n_particles[c_label][o_step])
+                                    for o_step in range(n_outputsteps)]
+                          for q_label in info["quantity_labels"][c_index]}
+                for (c_index, c_label) in classes_dict.items()}
 
-  # Offsets to build consecutive buffer
-  offsets = [np.zeros(info["n_outputsteps"], dtype="int")
-             for _ in range(info["n_classes"])]
+  # Continuous index offsets to build consecutive buffer
+  offsets = {c_label: np.zeros(n_outputsteps, dtype="int")
+             for c_label in classes_dict.values()}
 
   # Attach data
   for res in results:
-    _, _, local_n_particles, local_positions, local_tags, local_quantities = res
+    _, _, _, local_n_particles, local_positions, local_tags, local_quantities = res
 
-    for ic in range(info["n_classes"]):
-      for iout, n in enumerate(local_n_particles[ic]):
-        o = offsets[ic][iout]
-        positions[ic][iout][0][o:o+n] = np.copy(local_positions[ic][iout][0])
-        positions[ic][iout][1][o:o+n] = np.copy(local_positions[ic][iout][1])
-        positions[ic][iout][2][o:o+n] = np.copy(local_positions[ic][iout][2])
-        tags[ic][iout][o:o+n] = np.copy(local_tags[ic][iout])
-        for iq in range(info["n_quantities"][ic]):
-          quantities[ic][iq][iout][o:o +
-                                   n] = np.copy(local_quantities[ic][iq][iout])
+    for c_label in classes_dict.values():
+      for (o_step, n) in enumerate(local_n_particles[c_label]):
+        o = offsets[c_label][o_step]
+        positions[c_label][o_step][0][o:o+n] = \
+            np.copy(local_positions[c_label][o_step][0])
+        positions[c_label][o_step][1][o:o+n] = \
+            np.copy(local_positions[c_label][o_step][1])
+        positions[c_label][o_step][2][o:o+n] = \
+            np.copy(local_positions[c_label][o_step][2])
+        tags[c_label][o_step][o:o+n] = \
+            np.copy(local_tags[c_label][o_step])
+        for q_label in local_quantities[c_label].keys():
+          quantities[c_label][q_label][o_step][o:o+n] = \
+              np.copy(local_quantities[c_label][q_label][o_step])
 
-        offsets[ic][iout] += n
+        offsets[c_label][o_step] += n
 
-  for ic in range(info["n_classes"]):
-    for iout, n_particle in enumerate(n_particles[ic]):
-      assert offsets[ic][iout] == n_particle
+  for c_label in classes_dict.values():
+    for (o_step, n_particle) in enumerate(n_particles[c_label]):
+      assert offsets[c_label][o_step] == n_particle
 
-  return info, times, n_particles, positions, tags, quantities
+  return info, n_outputsteps, times, n_particles, positions, tags, quantities
 
 
 class ParticleData:
@@ -416,69 +631,116 @@ class ParticleData:
   python in general.
 
   Particle data will be read in the FORTRAN format as described in the
-  FDS user guide (version 6.7.1, section 24.10).
+  FDS user's guide (version 6.7.1, section 24.10).
 
   Parameters
   ----------
   filestem : str
-  fileextension : str
-    Those files will be read who start with the filestem parameter and end with the fileextenstion.
-    By default, all files with the extension 'prt5' will be read.
+    All files beginning with filestem and ending with prt5 will be read.
+  classes : list -> s1
+    Specify particle classes with labels s1 which will be read. By
+    default, every particle class will be considered.
   output_each : int
-    Each n-th timestep will actually be read, those inbetween will be skipped.
-    By default, every timestep will be considered.
-  classes : list -> int > 0
-    Specify identifiers of classes that will be read.
-    By default, every particle class will be considered.
+    Each n-th timestep will actually be read, those inbetween will be
+    skipped. By default, every timestep will be considered.
   logs : bool
-    Choose if logs will be printed out.
+    Choose if logs will be printed out. This feature is enabled by
+    default.
   parallel : bool
-    Decide if files from filesystem will be read in parallel.
+    Decide if files from filesystem will be read in parallel. This
+    feature is enabled by default.
 
   Class members
   -------------
   info : dict
-    Contains meta information about the dataset, as:
+    Contains meta information about the original FDS dataset, as:
       - filename : str
-          The name of the read datafile
-      - fds_version : int
-          Data has been generated with this FDS version
+          The name of all read datafiles in wildcard notation
+      - title : str
+          Title as specified in the FDS input file
+      - fds_version : str
+          Particle data has been generated with this FDS version
+      - ch_id : str
+          Character Identifier as specified in the FDS input file
+      - n_meshes : int
+          Number of meshes on which the simulation has been performed
       - n_classes : int
-          Number of particle classes from the FDS simulation
+          Number of particle classes in the simulation
+      - classes : list[i1] -> str
+          Label for the particle class with index i1
       - n_timesteps : int
-          Number of total timesteps from the FDS simulation
-      - n_outputsteps : int
-          Number of timesteps that have been read with fdspsp, i.e.,
-          n_outputsteps = n_timesteps // output_each + 1
+          Number of total timesteps in the FDS simulation
       - n_quantities : list[i1] -> int
-          Number of quantities for particle class i1
-      - q_labels : list[i1] -> str
-          List of quantity labels for particle class i1
-      - q_units : list[i1] -> str
-          List of quantity units for particle class i1
+          Number of quantities for particle class with index i1
+      - quantity_labels : list[i1][i2] -> str
+          Label for quantity with index i2 of particle class with
+          index i1
+      - quantity_units : list[i1][i2] -> str
+          Units for quantity with index i2 of particle class with
+          index i1
 
-  n_particles : list[i1][i2] -> int
-    Number of particles in class i1 at output step i2
+  n_outputsteps : int
+    Number of timesteps that have been read with fdspsp, i.e.,
+    n_outputsteps = n_timesteps // output_each + 1
 
   times : list[i1] -> float
-    Time of output step i1
+    Time at output step i1
 
-  positions : list[i1][i2][i3] -> np.array(float)
+  n_particles : dict[s1] -> list[i2] -> int
+    Number of particles in class with label s1 at output step i2
+
+  positions : dict[s1] -> list[i2][i3] -> numpy.array(float)
     positions holds coordinate lists (as numpy-arrays) for particle
-    class i1 at output step i2 for component (x,y,z) i3, where the
-    length of the array is given by the number of particles of the
-    selected class and step, i.e., n_particles[i1][i2]
+    class with label s1 at output step i2 for component (x,y,z) i3,
+    where the length of the array is given by the number of particles of
+    the selected class and step, i.e., n_particles[s1][i2]
 
-  tags : list[i1][i2] -> np.array(int)
-    numpy-array of particle tags for class i1 and output step i2
+  tags : dict[s1] -> list[i2] -> numpy.array(int)
+    numpy-array of particle tags for class with label s1 at
+    output step i2
 
-  quantities : list[i1][i2][i3] -> np.array(float)
-    numpy-array of particle quantity i2 for class i1 and output step i3;
-    the number of available quantities for the selected particle class
-    is given in info["n_quantities"][i1]
+  quantities : dict[s1][s2] -> list[i3] -> numpy.array(float)
+    numpy-array of particle quantity with label s2 for class with
+    label s1 at output step i3
   """
 
-  def __init__(self, filestem, fileextension="prt5", output_each=1, classes=None, logs=True, parallel=True):
-    self.info, self.times, self.n_particles, self.positions, self.tags, self.quantities = \
-        _read_multiple_particle_files(
-            filestem, fileextension, output_each, classes, logs, parallel)
+  def __init__(self, filestem,
+               classes=None, output_each=1, logs=True, parallel=True):
+    # Read simulation properties from smv file
+    smv_info = _read_smv_file(filestem + ".smv")
+
+    # Specify which particle classes will be read
+    # If user did not provide any class labels, consider all by default
+    if classes is not None:
+      self.classes = set(classes)
+    else:
+      self.classes = set(smv_info["classes"])
+
+    assert len(self.classes) > 0, "No particles specified!"
+    assert all(c in smv_info["classes"] for c in self.classes), \
+        "Selection of classes does not match those from the data!"
+
+    # Determine the correct indices for the chosen particle class labels
+    # and store them in a dictionary for convenience
+    classes_dict = {}
+    for class_label in self.classes:
+      class_index = smv_info["classes"].index(class_label)
+      classes_dict[class_index] = class_label
+
+    # Read particle data from prt5 files
+    (self.info, self.n_outputsteps, self.times, self.n_particles,
+     self.positions, self.tags, self.quantities) = \
+        _read_multiple_prt5_files(
+            filestem, classes_dict, output_each, logs, parallel)
+
+    # Update the info dictionary with all smv properties
+    # (The FDS version is more verbose in the smv dictionary)
+    self.info.update(smv_info)
+
+    # Check whether this dataset has been created with a compatible
+    # version of FDS
+    fds_version = self.info["fds_version"].lstrip("FDS").split("-", 1)[0]
+    fds_version_sequence = [int(v) for v in fds_version.split(".")]
+    if fds_version_sequence < [6, 7, 1]:
+      warn("This dataset has been created with FDS {}. We recommend using "
+           "a version of FDS more recent than 6.7.1!".format(fds_version))
