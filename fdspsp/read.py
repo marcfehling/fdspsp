@@ -440,7 +440,7 @@ def _read_prt5_file(filename, classes_dict,
 
   file_object.close()
 
-  return info, n_outputsteps, times, n_particles, positions, tags, quantities
+  return (info, n_outputsteps, times, n_particles, positions, tags, quantities)
 
 
 def _read_multiple_prt5_files(filestem, classes_dict,
@@ -595,7 +595,7 @@ def _read_multiple_prt5_files(filestem, classes_dict,
 
   # Attach data
   for res in results:
-    _, _, _, local_n_particles, local_positions, local_tags, local_quantities = res
+    (_, _, _, local_n_particles, local_positions, local_tags, local_quantities) = res
 
     for c_label in classes_dict.values():
       for (o_step, n) in enumerate(local_n_particles[c_label]):
@@ -618,7 +618,7 @@ def _read_multiple_prt5_files(filestem, classes_dict,
     for (o_step, n_particle) in enumerate(n_particles[c_label]):
       assert offsets[c_label][o_step] == n_particle
 
-  return info, n_outputsteps, times, n_particles, positions, tags, quantities
+  return (info, n_outputsteps, times, n_particles, positions, tags, quantities)
 
 
 class ParticleData:
@@ -682,6 +682,9 @@ class ParticleData:
   n_outputsteps : int
     Number of timesteps that have been read with fdspsp, i.e.,
     n_outputsteps = n_timesteps // output_each + 1
+
+  classes : set -> string
+    Labels of particle classes that have been read with fdspsp
 
   times : list[i1] -> float
     Time at output step i1
