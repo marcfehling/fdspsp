@@ -50,7 +50,7 @@ Technical Research Centre of Finland Ltd* as part of the project
 2007-2010*. Here, missiles with water tanks have been fired at
 reinforced concrete walls at high velocities. Typically, these missiles
 contained ~25kg water, weighted ~50kg in total, and have been
-accelerated to ~100 m/s. The dispersion of the water load after the
+accelerated to ~100m/s. The dispersion of the water load after the
 impact has been captured with high-speed cameras. For details, consult
 chapter 30 of the [final report
 ](https://www.vttresearch.com/sites/default/files/pdf/tiedotteet/2011/T2571.pdf)
