@@ -302,10 +302,10 @@ def _read_prt5_file(filename, classes_dict,
     # info lists
     for _ in range(info["n_quantities"][c_index]):
       q_label = _read_from_buffer(_get_fds_dtype("char", count=30))
-      info["quantity_labels"][c_index].append(q_label.decode())
+      info["quantity_labels"][c_index].append(q_label.decode().strip())
 
       q_unit = _read_from_buffer(_get_fds_dtype("char", count=30))
-      info["quantity_units"][c_index].append(q_unit.decode())
+      info["quantity_units"][c_index].append(q_unit.decode().strip())
 
   #
   # READ: particle data

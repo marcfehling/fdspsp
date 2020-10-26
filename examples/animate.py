@@ -28,7 +28,7 @@ from fdspsp import read
 
 
 assert len(sys.argv) > 1, \
-       "Please provide a path to FDS simulation data via command line!"
+    "Please provide a path to FDS simulation data via command line!"
 path_to_data = sys.argv[1]
 
 
@@ -54,11 +54,12 @@ for dim in range(3):
 # Animate all particle classes
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
-
 o_step = 0
+
+
 def updatefig(*args):
   global o_step
-  
+
   ax.clear()
   for c_label in p_data.classes:
     ax.scatter(p_data.positions[c_label][o_step][0],
@@ -78,10 +79,11 @@ def updatefig(*args):
 
   plt.legend()
   plt.draw()
-  
+
   o_step += 1
   if o_step >= p_data.n_outputsteps:
     o_step = 0
+
 
 ani = animation.FuncAnimation(fig, updatefig, interval=50, blit=False)
 plt.show()
