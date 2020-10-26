@@ -18,6 +18,8 @@ Calculate additional properties of each particle.
 
 import numpy as np
 
+from fdspsp import read
+
 
 def masses(particle_data, class_label, output_step):
   """
