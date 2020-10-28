@@ -15,7 +15,7 @@
 Script to calculate the radius of the spray front and its velocity with
 the farthest fraction method (FF).
 
-Provide a path to FDS simulation data via command line.
+Provide a path to FDS simulation data via the command line.
 """
 
 
@@ -28,7 +28,7 @@ from fdspsp import particle, read, reduce, select
 
 
 assert len(sys.argv) > 1, \
-    "Please provide a path to FDS simulation data via command line!"
+    "Please provide a path to FDS simulation data via the command line!"
 path_to_data = sys.argv[1]
 
 
