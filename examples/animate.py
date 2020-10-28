@@ -14,7 +14,7 @@
 """
 Script to animate particle data with matplotlib.
 
-Provide a path to FDS simulation data via command line.
+Provide a path to FDS simulation data via the command line.
 """
 
 
@@ -28,7 +28,7 @@ from fdspsp import read
 
 
 assert len(sys.argv) > 1, \
-    "Please provide a path to FDS simulation data via command line!"
+    "Please provide a path to FDS simulation data via the command line!"
 path_to_data = sys.argv[1]
 
 
