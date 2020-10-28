@@ -44,16 +44,15 @@ the understanding of the dispersion behavior of fuel and its
 simultaneous ignition forms the basis for this kind of assessment.
 
 An attempt to investigate the dispersion of fluids after an impact has
-been conducted in the *IMPACT2010* experiments conducted at *VTT
+been conducted in the *IMPACT2010* experiments at *VTT
 Technical Research Centre of Finland Ltd* as part of the project
 *SAFIR2010, The Finnish Research Programme on Nuclear Power Plant Safety
-2007-2010*. Here, missiles with water tanks have been fired at
+2007-2010*. Here, missiles with water tanks were fired at
 reinforced concrete walls at high velocities. Typically, these missiles
-contained ~25kg water, weighted ~50kg in total, and have been
+contained ~25kg water, weighed ~50kg in total, and were
 accelerated to ~100m/s. The dispersion of the water load after the
-impact has been captured with high-speed cameras. For details, consult
-chapter 30 of the [final report
-](https://www.vttresearch.com/sites/default/files/pdf/tiedotteet/2011/T2571.pdf)
+impact was captured with high-speed cameras. For details, consult
+chapter 30 of the [final report](https://www.vttresearch.com/sites/default/files/pdf/tiedotteet/2011/T2571.pdf)
 of the research project.
 
 The idea of this project is to numerically investigate the thermal load
